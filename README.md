@@ -10,18 +10,18 @@ npm start
 
 Open the printed local URL in your browser.
 
-## Connect OpenAI
+## Connect Gemini
 
 Create a `.env` file in this folder:
 
 ```sh
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-5.1
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 Restart the server after changing `.env`.
 
-The backend route is `POST /api/generate`. It sends your prompt to OpenAI and expects a JSON artifact with:
+The backend route is `POST /api/generate`. It sends your prompt to Gemini and expects a JSON artifact with:
 
 - `title`
 - `summary`
@@ -29,4 +29,4 @@ The backend route is `POST /api/generate`. It sends your prompt to OpenAI and ex
 - `css`
 - `js`
 
-If `OPENAI_API_KEY` is missing, the app uses a local fallback generator so the UI still works.
+If `GEMINI_API_KEY` is missing, the app uses a local fallback generator so the UI still works.

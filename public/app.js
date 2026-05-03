@@ -11,8 +11,11 @@ const navItems = document.querySelectorAll(".nav-item");
 const tabs = document.querySelectorAll(".view-tabs button");
 const chips = document.querySelectorAll(".prompt-chips button");
 const themeButtons = document.querySelectorAll(".theme-dot");
+const chatHistoryList = document.querySelector("#chatHistoryList");
+const newChatButton = document.querySelector("#newChatButton");
 
 let currentArtifact = null;
+let activeChatId = null;
 
 const initialArtifact = {
   title: "Kinetic glass card",
@@ -128,6 +131,23 @@ function appendMessage(type, text) {
   messageList.scrollTop = messageList.scrollHeight;
 }
 
+function clearMessages() {
+  messageList.innerHTML = "";
+}
+
+function renderMessages(messages) {
+  clearMessages();
+
+  if (!messages.length) {
+    appendMessage("agent", "Create mode is ready. Describe the animation, component, or interaction you want me to build next.");
+    return;
+  }
+
+  messages.forEach((message) => {
+    appendMessage(message.role === "user" ? "user" : "agent", message.text);
+  });
+}
+
 function setActiveNav(activeItem) {
   navItems.forEach((item) => {
     item.classList.toggle("active", item === activeItem);
@@ -155,36 +175,107 @@ function renderArtifact(artifact) {
   codeFrame.textContent = `<!-- HTML -->\n${artifact.html}\n\n/* CSS */\n${artifact.css}\n\n// JavaScript\n${artifact.js}`;
 }
 
+function renderChatHistory(chats) {
+  chatHistoryList.innerHTML = "";
+
+  if (!chats.length) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent = "No saved chats yet.";
+    chatHistoryList.append(empty);
+    return;
+  }
+
+  chats.forEach((chat) => {
+    const button = document.createElement("button");
+    button.className = "history-item";
+    button.type = "button";
+    button.dataset.chatId = chat.id;
+    button.classList.toggle("active", chat.id === activeChatId);
+    button.innerHTML = `
+      <strong>${escapeHtml(chat.title)}</strong>
+      <span>${escapeHtml(chat.preview)}</span>
+    `;
+    button.addEventListener("click", () => loadChat(chat.id));
+    chatHistoryList.append(button);
+  });
+}
+
+async function refreshChatHistory() {
+  const response = await fetch("/api/chats");
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load saved chats.");
+  }
+
+  renderChatHistory(payload.chats);
+}
+
+async function loadChat(chatId) {
+  setStatus("Loading", true);
+
+  try {
+    const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not load this chat.");
+    }
+
+    activeChatId = payload.chat.id;
+    setActiveArtifactView("preview");
+    renderMessages(payload.chat.messages);
+    renderArtifact(payload.chat.artifact || initialArtifact);
+    await refreshChatHistory();
+    setStatus("Ready");
+  } catch (error) {
+    appendMessage("agent", error.message);
+    setStatus("Ready");
+  }
+}
+
 function startNewCreation(activeItem) {
   setActiveNav(activeItem);
   setActiveArtifactView("preview");
+  activeChatId = null;
   promptInput.value = "";
+  clearMessages();
   renderArtifact(initialArtifact);
   appendMessage("agent", "Create mode is ready. Describe the animation, component, or interaction you want me to build next.");
+  refreshChatHistory().catch((error) => appendMessage("agent", error.message));
   promptInput.focus();
 }
 
 async function generateArtifact(prompt) {
   setStatus("Thinking", true);
   appendMessage("user", prompt);
+  let payload = {};
 
   try {
     const response = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt, chatId: activeChatId })
     });
 
-    const artifact = await response.json();
+    payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(artifact.error || "The agent could not generate a response.");
+      throw new Error(payload.error || "The agent could not generate a response.");
     }
 
-    renderArtifact(artifact);
-    appendMessage("agent", artifact.summary);
+    activeChatId = payload.chat.id;
+    renderArtifact(payload.artifact);
+    appendMessage("agent", payload.artifact.summary);
+    await refreshChatHistory();
     setStatus("Ready");
   } catch (error) {
+    if (payload.chat) {
+      activeChatId = payload.chat.id;
+      refreshChatHistory().catch(() => {});
+    }
+
     appendMessage("agent", error.message);
     setStatus("Ready");
   }
@@ -196,6 +287,10 @@ composer.addEventListener("submit", (event) => {
   if (!prompt) return;
   promptInput.value = "";
   generateArtifact(prompt);
+});
+
+newChatButton.addEventListener("click", () => {
+  startNewCreation(document.querySelector('[data-nav="create"]'));
 });
 
 chips.forEach((chip) => {
@@ -231,3 +326,4 @@ themeButtons.forEach((button) => {
 });
 
 renderArtifact(initialArtifact);
+refreshChatHistory().catch((error) => appendMessage("agent", error.message));

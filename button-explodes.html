@@ -1,0 +1,138 @@
+<!-- HTML -->
+<button class="bttn-exploder" type="button">Click Me!</button>
+
+/* CSS */
+.bttn-exploder {
+  --bttn-primary: #6a05ad; /* Deep Purple */
+  --bttn-secondary: #8c00ff; /* Brighter Purple */
+  --bttn-text: #ffffff;
+  --bttn-shadow-color: rgba(106, 5, 173, 0.4);
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 2.5rem;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--bttn-text);
+  background: linear-gradient(45deg, var(--bttn-primary), var(--bttn-secondary));
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 10px 20px -5px var(--bttn-shadow-color);
+  transition: all 0.3s ease-out;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bttn-exploder:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 15px 25px -8px var(--bttn-shadow-color);
+}
+
+.bttn-exploder:active {
+  transform: translateY(0px) scale(0.98);
+  box-shadow: 0 5px 15px -5px var(--bttn-shadow-color);
+}
+
+/* Explosion Particle Styles */
+.bttn-exploder-particles-container {
+  position: absolute;
+  /* These will be dynamically set by JS to button's center */
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 9999;
+}
+
+.bttn-exploder-particle {
+  position: absolute;
+  background-color: currentColor; /* Color set by JS */
+  border-radius: 50%; /* Default to circle, JS can change */
+  opacity: 0;
+  animation: bttnExplosionParticle 0.8s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes bttnExplosionParticle {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: var(--bttn-exploder-transform) scale(0.1);
+  }
+}
+
+// JavaScript
+document.addEventListener('DOMContentLoaded', () => {
+  const button = document.querySelector('.bttn-exploder');
+  const particleColors = [
+    '#ff7e5f', // Coral
+    '#feb47b', // Peach
+    '#ffc72c', // Gold
+    '#a8e063', // Light Green
+    '#56ab2f', // Dark Green
+    '#00c6ff', // Sky Blue
+    '#0072ff', // Royal Blue
+    '#8e2de2', // Violet
+    '#4a00e0'  // Dark Violet
+  ];
+
+  button.addEventListener('click', (event) => {
+    const rect = button.getBoundingClientRect();
+    const btnCenterX = rect.left + rect.width / 2;
+    const btnCenterY = rect.top + rect.height / 2;
+
+    const particlesContainer = document.createElement('div');
+    particlesContainer.classList.add('bttn-exploder-particles-container');
+    // Position the container at the button's center, serving as the explosion origin
+    particlesContainer.style.top = `${btnCenterY}px`;
+    particlesContainer.style.left = `${btnCenterX}px`;
+
+    const numParticles = 30;
+    for (let i = 0; i < numParticles; i++) {
+      const particle = document.createElement('span');
+      particle.classList.add('bttn-exploder-particle');
+
+      const size = Math.random() * 8 + 4; // Particle size between 4px and 12px
+      particle.style.width = `${size}px`;
+      particle.style.height = `${size}px`;
+      particle.style.backgroundColor = particleColors[Math.floor(Math.random() * particleColors.length)];
+      particle.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px'; // Randomly square or circle
+
+      // Random direction and distance for particle movement
+      const angle = Math.random() * 2 * Math.PI; // Full circle in radians
+      const distance = Math.random() * 100 + 50; // Distance from 50px to 150px
+      const endX = Math.cos(angle) * distance;
+      const endY = Math.sin(angle) * distance;
+
+      // Apply custom property for animation end state (translation and rotation)
+      particle.style.setProperty('--bttn-exploder-transform', `translate(${endX}px, ${endY}px) rotate(${Math.random() * 720}deg)`);
+      
+      // Random animation delay and duration for a more organic explosion
+      const delay = Math.random() * 0.1; // Delay up to 0.1s for staggered effect
+      const duration = Math.random() * 0.5 + 0.5; // Duration between 0.5s and 1.0s
+      particle.style.animationDelay = `${delay}s`;
+      particle.style.animationDuration = `${duration}s`;
+
+      particlesContainer.appendChild(particle);
+    }
+
+    document.body.appendChild(particlesContainer);
+
+    // Remove particles container after the longest animation completes
+    // Max duration = 1.0s, Max delay = 0.1s. Add a small buffer.
+    const maxAnimationTime = (0.5 + 0.5) + 0.1; // Max duration + Max delay
+    setTimeout(() => {
+      particlesContainer.remove();
+    }, maxAnimationTime * 1000 + 50);
+  });
+});

@@ -138,6 +138,80 @@ button {
   color: var(--text);
 }
 
+.chat-history {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.new-chat-button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.new-chat-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-item:hover,
+.history-item.active {
+  border-color: var(--line);
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.history-item strong,
+.history-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item strong {
+  font-size: 13px;
+}
+
+.history-item span,
+.history-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.history-empty {
+  margin: 4px 0 0;
+}
+
 .icon {
   display: inline-block;
   width: 18px;
@@ -549,6 +623,7 @@ textarea:focus {
   }
 
   .nav-list,
+  .chat-history,
   .system-card {
     display: none;
   }

@@ -4,7 +4,9 @@ const path = require("path");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const DATA_DIR = path.join(__dirname, "data");
+const CHAT_STORE_PATH = path.join(DATA_DIR, "chats.json");
+const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -53,11 +55,118 @@ function loadEnvFile() {
 
 loadEnvFile();
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.2";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
+}
+
+function ensureChatStore() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(CHAT_STORE_PATH)) {
+    fs.writeFileSync(CHAT_STORE_PATH, JSON.stringify({ chats: [] }, null, 2));
+  }
+}
+
+function readChatStore() {
+  ensureChatStore();
+
+  try {
+    const store = JSON.parse(fs.readFileSync(CHAT_STORE_PATH, "utf8"));
+    return {
+      chats: Array.isArray(store.chats) ? store.chats : []
+    };
+  } catch (error) {
+    return { chats: [] };
+  }
+}
+
+function writeChatStore(store) {
+  ensureChatStore();
+  fs.writeFileSync(CHAT_STORE_PATH, JSON.stringify(store, null, 2));
+}
+
+function createChat() {
+  const now = new Date().toISOString();
+
+  return {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    title: "New chat",
+    messages: [],
+    artifact: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function summarizeChat(chat) {
+  const lastMessage = chat.messages.at(-1);
+
+  return {
+    id: chat.id,
+    title: chat.title,
+    updatedAt: chat.updatedAt,
+    preview: lastMessage ? lastMessage.text : "No messages yet"
+  };
+}
+
+function getChatSummaries() {
+  return readChatStore().chats
+    .slice()
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .map(summarizeChat);
+}
+
+function findOrCreateChat(chatId) {
+  const store = readChatStore();
+  let chat = store.chats.find((item) => item.id === chatId);
+
+  if (!chat) {
+    chat = createChat();
+    store.chats.push(chat);
+  }
+
+  return { store, chat };
+}
+
+function saveGeneratedChat(chatId, prompt, artifact) {
+  const { store, chat } = findOrCreateChat(chatId);
+  const now = new Date().toISOString();
+  const agentText = artifact.summary;
+
+  chat.messages.push({ role: "user", text: prompt, createdAt: now });
+  chat.messages.push({ role: "agent", text: agentText, createdAt: now });
+  chat.artifact = artifact;
+  chat.updatedAt = now;
+
+  if (chat.title === "New chat") {
+    chat.title = artifact.title || prompt.slice(0, 48);
+  }
+
+  writeChatStore(store);
+
+  return chat;
+}
+
+function saveFailedChat(chatId, prompt, errorMessage) {
+  const { store, chat } = findOrCreateChat(chatId);
+  const now = new Date().toISOString();
+
+  chat.messages.push({ role: "user", text: prompt, createdAt: now });
+  chat.messages.push({ role: "agent", text: errorMessage, createdAt: now });
+  chat.updatedAt = now;
+
+  if (chat.title === "New chat") {
+    chat.title = prompt.slice(0, 48) || "Generation error";
+  }
+
+  writeChatStore(store);
+
+  return chat;
 }
 
 function readBody(req) {
@@ -259,68 +368,132 @@ function normalizeArtifact(payload) {
   };
 
   if (!artifact.html || !artifact.css) {
-    throw new Error("OpenAI returned an incomplete UI artifact.");
+    throw new Error("Gemini returned an incomplete UI artifact.");
   }
 
   return artifact;
 }
 
-async function generateWithOpenAi(prompt) {
-  if (!process.env.OPENAI_API_KEY) {
+function getGeminiText(payload) {
+  return payload.candidates?.flatMap((candidate) => candidate.content?.parts || [])
+    .filter((part) => typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n") || "";
+}
+
+async function generateWithGemini(prompt) {
+  if (!process.env.GEMINI_API_KEY) {
     return {
       ...buildAgentReply(prompt),
       provider: "local",
-      summary: "OPENAI_API_KEY is not configured yet, so I used the local fallback generator. Add your key in .env to start using OpenAI prompts."
+      summary: "GEMINI_API_KEY is not configured yet, so I used the local fallback generator. Add your key in .env to start using Gemini prompts."
     };
   }
 
-  const response = await fetch(OPENAI_RESPONSES_URL, {
+  const model = encodeURIComponent(GEMINI_MODEL);
+  const response = await fetch(`${GEMINI_API_BASE_URL}/${model}:generateContent`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      "x-goog-api-key": process.env.GEMINI_API_KEY,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: buildOpenAiPrompt(prompt)
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: buildOpenAiPrompt(prompt) }
+          ]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
     })
   });
 
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const message = payload.error?.message || `OpenAI request failed with status ${response.status}.`;
+    const message = payload.error?.message || `Gemini request failed with status ${response.status}.`;
     throw new Error(message);
   }
 
-  const text = payload.output_text || payload.output?.flatMap((item) => item.content || [])
-    .filter((item) => item.type === "output_text")
-    .map((item) => item.text)
-    .join("\n");
+  const text = getGeminiText(payload);
   const artifact = normalizeArtifact(extractJson(text));
 
   return {
     ...artifact,
-    provider: "openai",
-    model: OPENAI_MODEL
+    provider: "gemini",
+    model: GEMINI_MODEL
   };
 }
 
 async function handleApi(req, res) {
+  let body = {};
+  let prompt = "";
+
   try {
     const raw = await readBody(req);
-    const body = raw ? JSON.parse(raw) : {};
-    const prompt = String(body.prompt || "").trim();
+    body = raw ? JSON.parse(raw) : {};
+    prompt = String(body.prompt || "").trim();
 
     if (!prompt) {
       sendJson(res, 400, { error: "Prompt is required." });
       return;
     }
 
-    sendJson(res, 200, await generateWithOpenAi(prompt));
+    const artifact = await generateWithGemini(prompt);
+    const chat = saveGeneratedChat(body.chatId, prompt, artifact);
+
+    sendJson(res, 200, {
+      artifact,
+      chat: summarizeChat(chat)
+    });
   } catch (error) {
-    sendJson(res, 500, { error: error.message });
+    const payload = { error: error.message };
+
+    if (prompt) {
+      payload.chat = summarizeChat(saveFailedChat(body.chatId, prompt, error.message));
+    }
+
+    sendJson(res, 500, payload);
   }
+}
+
+function handleChats(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (req.method === "GET" && url.pathname === "/api/chats") {
+    sendJson(res, 200, { chats: getChatSummaries() });
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/chats") {
+    const store = readChatStore();
+    const chat = createChat();
+    store.chats.push(chat);
+    writeChatStore(store);
+    sendJson(res, 201, { chat });
+    return true;
+  }
+
+  const match = url.pathname.match(/^\/api\/chats\/([^/]+)$/);
+
+  if (req.method === "GET" && match) {
+    const store = readChatStore();
+    const chat = store.chats.find((item) => item.id === match[1]);
+
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return true;
+    }
+
+    sendJson(res, 200, { chat });
+    return true;
+  }
+
+  return false;
 }
 
 function serveStatic(req, res) {
@@ -347,6 +520,10 @@ function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith("/api/chats") && handleChats(req, res)) {
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/generate") {
     handleApi(req, res);
     return;
@@ -363,5 +540,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`AnimationJS-CSS is running at http://localhost:${PORT}`);
-  console.log(`OpenAI model: ${OPENAI_MODEL}`);
+  console.log(`Gemini model: ${GEMINI_MODEL}`);
 });
