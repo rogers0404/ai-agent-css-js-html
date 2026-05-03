@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnimationJS-CSS</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Agent navigation">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <strong>AnimationJS-CSS</strong>
+            <span>HTML CSS JS agent</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Workspaces">
+          <button class="nav-item active" data-nav="create" type="button">
+            <span class="icon icon-spark" aria-hidden="true"></span>
+            Create
+          </button>
+          <button class="nav-item" data-nav="snippets" type="button">
+            <span class="icon icon-code" aria-hidden="true"></span>
+            Snippets
+          </button>
+          <button class="nav-item" data-nav="artifacts" type="button">
+            <span class="icon icon-cube" aria-hidden="true"></span>
+            Artifacts
+          </button>
+        </nav>
+
+        <section class="system-card">
+          <span class="card-label">Specialty</span>
+          <h2>Interface animation</h2>
+          <p>Generates HTML structures, expressive CSS motion, and lightweight JavaScript interactions.</p>
+        </section>
+
+        <div class="theme-row" aria-label="Theme controls">
+          <button class="theme-dot active" data-theme="dark" type="button" aria-label="Dark theme"></button>
+          <button class="theme-dot mint" data-theme="mint" type="button" aria-label="Mint theme"></button>
+          <button class="theme-dot solar" data-theme="solar" type="button" aria-label="Solar theme"></button>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">AI Agent Interface</p>
+            <h1>Build polished UI animations with HTML, CSS, and JavaScript.</h1>
+          </div>
+          <div class="agent-status" aria-live="polite">
+            <span class="status-pulse" aria-hidden="true"></span>
+            Ready
+          </div>
+        </header>
+
+        <section class="stage">
+          <div class="chat-panel" aria-label="Agent conversation">
+            <div class="message-list" id="messageList">
+              <article class="message agent-message">
+                <span class="avatar">AJ</span>
+                <div class="bubble">
+                  <p>I am ready to prototype motion-first interfaces. Ask for a card, loader, menu, button, dashboard widget, or any HTML/CSS/JS animation idea.</p>
+                </div>
+              </article>
+            </div>
+
+            <div class="prompt-chips" aria-label="Prompt examples">
+              <button type="button">Create a glowing animated dashboard card</button>
+              <button type="button">Design a magnetic CSS button</button>
+              <button type="button">Build a futuristic loading animation</button>
+            </div>
+
+            <form class="composer" id="composer">
+              <label for="promptInput" class="sr-only">Describe the UI animation you want</label>
+              <textarea id="promptInput" rows="3" placeholder="Describe the UI animation you want..."></textarea>
+              <button class="send-button" type="submit" aria-label="Send prompt">
+                <span class="icon icon-arrow" aria-hidden="true"></span>
+              </button>
+            </form>
+          </div>
+
+          <div class="artifact-panel" aria-label="Generated artifact">
+            <div class="preview-toolbar">
+              <div>
+                <span class="card-label">Live Artifact</span>
+                <h2 id="artifactTitle">Kinetic glass card</h2>
+              </div>
+              <div class="view-tabs" role="tablist" aria-label="Artifact views">
+                <button class="active" data-view="preview" type="button">Preview</button>
+                <button data-view="code" type="button">Code</button>
+              </div>
+            </div>
+
+            <div class="preview-frame" id="previewFrame"></div>
+
+            <pre class="code-frame hidden" id="codeFrame"><code></code></pre>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="userMessageTemplate">
+      <article class="message user-message">
+        <div class="bubble"></div>
+        <span class="avatar">You</span>
+      </article>
+    </template>
+
+    <template id="agentMessageTemplate">
+      <article class="message agent-message">
+        <span class="avatar">AJ</span>
+        <div class="bubble"></div>
+      </article>
+    </template>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

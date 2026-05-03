@@ -1,0 +1,19 @@
+{
+  "name": "animationjs-css",
+  "version": "1.0.0",
+  "description": "A Node.js AI agent interface focused on HTML, CSS, and JavaScript UI animations.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "ai-agent",
+    "ui",
+    "animation",
+    "html",
+    "css",
+    "javascript"
+  ],
+  "author": "",
+  "license": "MIT"
+}
