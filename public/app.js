@@ -13,6 +13,8 @@ const chips = document.querySelectorAll(".prompt-chips button");
 const themeButtons = document.querySelectorAll(".theme-dot");
 const chatHistoryList = document.querySelector("#chatHistoryList");
 const newChatButton = document.querySelector("#newChatButton");
+const serverHealth = document.querySelector("#serverHealth");
+const serverHealthText = document.querySelector("#serverHealthText");
 
 let currentArtifact = null;
 let activeChatId = null;
@@ -121,6 +123,29 @@ function escapeHtml(value) {
 function setStatus(label, isThinking = false) {
   statusLabel.lastChild.textContent = ` ${label}`;
   document.body.classList.toggle("thinking", isThinking);
+}
+
+function setServerHealth(state, label) {
+  serverHealth.dataset.state = state;
+  serverHealthText.textContent = label;
+}
+
+async function refreshServerHealth() {
+  const startedAt = performance.now();
+
+  try {
+    const response = await fetch("/api/health", { cache: "no-store" });
+    const payload = await response.json();
+
+    if (!response.ok || payload.status !== "ok") {
+      throw new Error(payload.error || "Health check failed");
+    }
+
+    const latency = Math.max(1, Math.round(performance.now() - startedAt));
+    setServerHealth("online", `${payload.provider} online - ${latency}ms`);
+  } catch (error) {
+    setServerHealth("offline", "Offline");
+  }
 }
 
 function appendMessage(type, text) {
@@ -327,3 +352,5 @@ themeButtons.forEach((button) => {
 
 renderArtifact(initialArtifact);
 refreshChatHistory().catch((error) => appendMessage("agent", error.message));
+refreshServerHealth();
+setInterval(refreshServerHealth, 15000);

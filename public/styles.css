@@ -360,6 +360,64 @@ h1 {
   color: var(--muted);
 }
 
+.server-health {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(260px, calc(100vw - 36px));
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(19 23 32 / .9);
+  box-shadow: 0 16px 46px rgb(0 0 0 / .28);
+  backdrop-filter: blur(18px);
+}
+
+.health-dot {
+  width: 10px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--accent-3);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-3) 55%, transparent);
+  animation: pulse 1.8s infinite;
+}
+
+.server-health[data-state="online"] .health-dot {
+  background: #4ade80;
+  box-shadow: 0 0 0 0 rgb(74 222 128 / .55);
+}
+
+.server-health[data-state="offline"] .health-dot {
+  background: #fb7185;
+  box-shadow: 0 0 0 0 rgb(251 113 133 / .45);
+}
+
+.health-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.health-copy strong,
+.health-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-copy strong {
+  font-size: 12px;
+}
+
+.health-copy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .status-pulse {
   width: 9px;
   aspect-ratio: 1;

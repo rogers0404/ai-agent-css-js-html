@@ -496,6 +496,22 @@ function handleChats(req, res) {
   return false;
 }
 
+function handleHealth(req, res) {
+  if (req.method !== "GET" || req.url !== "/api/health") {
+    return false;
+  }
+
+  sendJson(res, 200, {
+    status: "ok",
+    provider: process.env.GEMINI_API_KEY ? "gemini" : "local",
+    model: GEMINI_MODEL,
+    uptime: Math.round(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+
+  return true;
+}
+
 function serveStatic(req, res) {
   const safeUrl = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
   const filePath = path.normalize(path.join(PUBLIC_DIR, safeUrl));
@@ -520,6 +536,10 @@ function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  if (handleHealth(req, res)) {
+    return;
+  }
+
   if (req.url.startsWith("/api/chats") && handleChats(req, res)) {
     return;
   }
