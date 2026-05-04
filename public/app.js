@@ -6,7 +6,7 @@ const agentTemplate = document.querySelector("#agentMessageTemplate");
 const previewFrame = document.querySelector("#previewFrame");
 const codeFrame = document.querySelector("#codeFrame code");
 const artifactTitle = document.querySelector("#artifactTitle");
-const statusLabel = document.querySelector(".agent-status");
+const agentStatusText = document.querySelector("#agentStatusText");
 const navItems = document.querySelectorAll(".nav-item");
 const tabs = document.querySelectorAll(".view-tabs button");
 const chips = document.querySelectorAll(".prompt-chips button");
@@ -15,9 +15,35 @@ const chatHistoryList = document.querySelector("#chatHistoryList");
 const newChatButton = document.querySelector("#newChatButton");
 const serverHealth = document.querySelector("#serverHealth");
 const serverHealthText = document.querySelector("#serverHealthText");
+const chatActionModal = document.querySelector("#chatActionModal");
+const chatActionKicker = document.querySelector("#chatActionKicker");
+const chatActionTitle = document.querySelector("#chatActionTitle");
+const chatActionMessage = document.querySelector("#chatActionMessage");
+const chatActionField = document.querySelector("#chatActionField");
+const chatActionInput = document.querySelector("#chatActionInput");
+const chatActionError = document.querySelector("#chatActionError");
+const chatActionCancel = document.querySelector("#chatActionCancel");
+const chatActionConfirm = document.querySelector("#chatActionConfirm");
 
 let currentArtifact = null;
 let activeChatId = null;
+let latestChats = [];
+let activeModalResolver = null;
+
+const snippetPrompts = [
+  {
+    title: "Animated Button",
+    text: "Design a refined magnetic action button with hover, press, and focus states."
+  },
+  {
+    title: "Loading System",
+    text: "Build a professional loading animation with accessible motion and a clear progress rhythm."
+  },
+  {
+    title: "Dashboard Card",
+    text: "Create a compact analytics card with animated metrics and subtle depth."
+  }
+];
 
 const initialArtifact = {
   title: "Kinetic glass card",
@@ -121,7 +147,7 @@ function escapeHtml(value) {
 }
 
 function setStatus(label, isThinking = false) {
-  statusLabel.lastChild.textContent = ` ${label}`;
+  agentStatusText.textContent = label;
   document.body.classList.toggle("thinking", isThinking);
 }
 
@@ -160,6 +186,12 @@ function clearMessages() {
   messageList.innerHTML = "";
 }
 
+function createAgentArticle() {
+  const node = agentTemplate.content.firstElementChild.cloneNode(true);
+  node.querySelector(".bubble").innerHTML = "";
+  return node;
+}
+
 function renderMessages(messages) {
   clearMessages();
 
@@ -193,11 +225,43 @@ function setActiveArtifactView(view) {
 function renderArtifact(artifact) {
   currentArtifact = artifact;
   artifactTitle.textContent = artifact.title;
-  previewFrame.innerHTML = `${artifact.html}<style>${artifact.css}</style>`;
-  const script = document.createElement("script");
-  script.textContent = artifact.js;
-  previewFrame.append(script);
+  previewFrame.srcdoc = buildPreviewDocument(artifact);
   codeFrame.textContent = `<!-- HTML -->\n${artifact.html}\n\n/* CSS */\n${artifact.css}\n\n// JavaScript\n${artifact.js}`;
+}
+
+function buildPreviewDocument(artifact) {
+  const js = String(artifact.js || "").replaceAll("</script", "<\\/script");
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; margin: 0; }
+      body {
+        display: grid;
+        min-height: 100vh;
+        padding: 18px;
+        place-items: stretch;
+        background: #07090d;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      ${artifact.css}
+    </style>
+  </head>
+  <body>
+    ${artifact.html}
+    <script>
+      try {
+        ${js}
+      } catch (error) {
+        console.error("Artifact script error:", error);
+      }
+    </script>
+  </body>
+</html>`;
 }
 
 function renderChatHistory(chats) {
@@ -212,18 +276,65 @@ function renderChatHistory(chats) {
   }
 
   chats.forEach((chat) => {
-    const button = document.createElement("button");
-    button.className = "history-item";
-    button.type = "button";
-    button.dataset.chatId = chat.id;
-    button.classList.toggle("active", chat.id === activeChatId);
-    button.innerHTML = `
-      <strong>${escapeHtml(chat.title)}</strong>
-      <span>${escapeHtml(chat.preview)}</span>
-    `;
-    button.addEventListener("click", () => loadChat(chat.id));
-    chatHistoryList.append(button);
+    const row = document.createElement("article");
+    row.className = "history-item";
+    row.dataset.chatId = chat.id;
+    row.classList.toggle("active", chat.id === activeChatId);
+    row.classList.toggle("pinned", Boolean(chat.pinned));
+
+    const openButton = document.createElement("button");
+    openButton.className = "history-open";
+    openButton.type = "button";
+    openButton.addEventListener("click", () => loadChat(chat.id));
+
+    const title = document.createElement("strong");
+    title.textContent = chat.title;
+    const preview = document.createElement("span");
+    preview.textContent = chat.preview;
+    openButton.append(title, preview);
+
+    const actions = document.createElement("details");
+    actions.className = "history-menu";
+    actions.addEventListener("toggle", () => {
+      if (!actions.open) return;
+
+      document.querySelectorAll(".history-menu[open]").forEach((menu) => {
+        if (menu !== actions) {
+          menu.removeAttribute("open");
+        }
+      });
+    });
+
+    const actionTrigger = document.createElement("summary");
+    actionTrigger.className = "history-menu-trigger";
+    actionTrigger.setAttribute("aria-label", "Chat actions");
+    actionTrigger.setAttribute("title", "Chat actions");
+
+    const actionList = document.createElement("div");
+    actionList.className = "history-actions";
+    actionList.append(
+      createChatActionButton(chat.pinned ? "Unpin" : "Pin", () => toggleChatPin(chat)),
+      createChatActionButton("Rename", () => renameChat(chat)),
+      createChatActionButton("Delete", () => deleteChat(chat), "danger")
+    );
+
+    actions.append(actionTrigger, actionList);
+    row.append(openButton, actions);
+    chatHistoryList.append(row);
   });
+}
+
+function createChatActionButton(label, onClick, variant = "") {
+  const button = document.createElement("button");
+  button.className = variant ? `history-action ${variant}` : "history-action";
+  button.type = "button";
+  button.textContent = label;
+  button.setAttribute("aria-label", label);
+  button.addEventListener("click", (event) => {
+    event.currentTarget.closest(".history-menu")?.removeAttribute("open");
+    onClick(event);
+  });
+  return button;
 }
 
 async function refreshChatHistory() {
@@ -234,7 +345,312 @@ async function refreshChatHistory() {
     throw new Error(payload.error || "Could not load saved chats.");
   }
 
+  latestChats = payload.chats;
   renderChatHistory(payload.chats);
+}
+
+async function updateChat(chatId, changes) {
+  const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes)
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not update chat.");
+  }
+
+  return payload.chat;
+}
+
+function closeChatModal(result) {
+  chatActionModal.classList.add("hidden");
+  chatActionConfirm.classList.remove("danger");
+  chatActionError.classList.add("hidden");
+  chatActionError.textContent = "";
+
+  if (activeModalResolver) {
+    activeModalResolver(result);
+    activeModalResolver = null;
+  }
+}
+
+function openChatModal(options) {
+  return new Promise((resolve) => {
+    activeModalResolver = resolve;
+    chatActionKicker.textContent = options.kicker || "Chat action";
+    chatActionTitle.textContent = options.title;
+    chatActionMessage.textContent = options.message;
+    chatActionConfirm.textContent = options.confirmLabel || "Confirm";
+    chatActionConfirm.classList.toggle("danger", Boolean(options.danger));
+    chatActionError.classList.add("hidden");
+    chatActionError.textContent = "";
+
+    const hasInput = Object.prototype.hasOwnProperty.call(options, "inputValue");
+    chatActionField.classList.toggle("hidden", !hasInput);
+    chatActionInput.value = hasInput ? options.inputValue : "";
+    chatActionInput.placeholder = options.inputPlaceholder || "";
+    chatActionModal.classList.remove("hidden");
+
+    requestAnimationFrame(() => {
+      if (hasInput) {
+        chatActionInput.focus();
+        chatActionInput.select();
+      } else {
+        chatActionConfirm.focus();
+      }
+    });
+  });
+}
+
+function showChatModalError(message) {
+  chatActionError.textContent = message;
+  chatActionError.classList.remove("hidden");
+}
+
+async function toggleChatPin(chat) {
+  const nextPinned = !chat.pinned;
+  const confirmed = await openChatModal({
+    title: nextPinned ? "Pin chat" : "Unpin chat",
+    message: nextPinned
+      ? `"${chat.title}" will stay at the top of your chat list.`
+      : `"${chat.title}" will return to normal sorting.`,
+    confirmLabel: nextPinned ? "Pin chat" : "Unpin chat"
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await updateChat(chat.id, { pinned: nextPinned });
+    await refreshChatHistory();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function renameChat(chat) {
+  const nextTitle = await openChatModal({
+    title: "Rename chat",
+    message: "Choose a short, clear name for this conversation.",
+    confirmLabel: "Save name",
+    inputValue: chat.title,
+    inputPlaceholder: "Chat name"
+  });
+
+  if (nextTitle === false) {
+    return;
+  }
+
+  const title = String(nextTitle).trim();
+
+  if (!title) {
+    return;
+  }
+
+  try {
+    await updateChat(chat.id, { title });
+    await refreshChatHistory();
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function deleteChat(chat) {
+  const shouldDelete = await openChatModal({
+    title: "Delete chat",
+    message: `"${chat.title}" will be permanently removed from your saved chats.`,
+    confirmLabel: "Delete chat",
+    danger: true
+  });
+
+  if (!shouldDelete) {
+    return;
+  }
+
+  const previousChats = latestChats.slice();
+  latestChats = latestChats.filter((item) => item.id !== chat.id);
+  activeChatId = activeChatId === chat.id ? null : activeChatId;
+  renderChatHistory(latestChats);
+
+  try {
+    const response = await fetch(`/api/chats/${encodeURIComponent(chat.id)}`, {
+      method: "DELETE"
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not delete chat.");
+    }
+  } catch (error) {
+    latestChats = previousChats;
+    renderChatHistory(latestChats);
+    console.error(error);
+  }
+}
+
+chatActionCancel.addEventListener("click", () => closeChatModal(false));
+
+chatActionConfirm.addEventListener("click", () => {
+  if (chatActionField.classList.contains("hidden")) {
+    closeChatModal(true);
+    return;
+  }
+
+  const value = chatActionInput.value.trim();
+
+  if (!value) {
+    showChatModalError("Chat title is required.");
+    chatActionInput.focus();
+    return;
+  }
+
+  closeChatModal(value);
+});
+
+chatActionModal.addEventListener("click", (event) => {
+  if (event.target === chatActionModal) {
+    closeChatModal(false);
+  }
+});
+
+chatActionInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    chatActionConfirm.click();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !chatActionModal.classList.contains("hidden")) {
+    closeChatModal(false);
+  }
+});
+
+function addActionButton(parent, label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  parent.append(button);
+  return button;
+}
+
+function renderSnippetsView(activeItem) {
+  setActiveNav(activeItem);
+  clearMessages();
+
+  const intro = createAgentArticle();
+  const introBubble = intro.querySelector(".bubble");
+  const title = document.createElement("h3");
+  title.textContent = "Reusable snippets";
+  const copy = document.createElement("p");
+  copy.textContent = "Start from a focused prompt or inspect the current artifact code by section.";
+  introBubble.append(title, copy);
+  messageList.append(intro);
+
+  const promptArticle = createAgentArticle();
+  const promptGrid = document.createElement("div");
+  promptGrid.className = "action-grid";
+
+  snippetPrompts.forEach((snippet) => {
+    const card = document.createElement("section");
+    card.className = "action-card";
+    const heading = document.createElement("h3");
+    heading.textContent = snippet.title;
+    const body = document.createElement("p");
+    body.textContent = snippet.text;
+    const actions = document.createElement("div");
+    actions.className = "action-row";
+    addActionButton(actions, "Use prompt", () => {
+      startNewCreation(document.querySelector('[data-nav="create"]'));
+      promptInput.value = snippet.text;
+      promptInput.focus();
+    });
+    card.append(heading, body, actions);
+    promptGrid.append(card);
+  });
+
+  promptArticle.querySelector(".bubble").append(promptGrid);
+  messageList.append(promptArticle);
+
+  const codeArticle = createAgentArticle();
+  const codeGrid = document.createElement("div");
+  codeGrid.className = "action-grid";
+
+  ["html", "css", "js"].forEach((key) => {
+    const card = document.createElement("section");
+    card.className = "action-card";
+    const heading = document.createElement("h3");
+    heading.textContent = key.toUpperCase();
+    const body = document.createElement("p");
+    body.textContent = currentArtifact?.[key]
+      ? currentArtifact[key].slice(0, 120).replace(/\s+/g, " ").trim()
+      : "No snippet is loaded yet.";
+    const actions = document.createElement("div");
+    actions.className = "action-row";
+    addActionButton(actions, "View", () => {
+      setActiveArtifactView("code");
+      codeFrame.textContent = currentArtifact?.[key] || "";
+    });
+    addActionButton(actions, "Copy", () => copyText(currentArtifact?.[key] || ""));
+    card.append(heading, body, actions);
+    codeGrid.append(card);
+  });
+
+  codeArticle.querySelector(".bubble").append(codeGrid);
+  messageList.append(codeArticle);
+}
+
+function renderArtifactsView(activeItem) {
+  setActiveNav(activeItem);
+  clearMessages();
+
+  const article = createAgentArticle();
+  const bubble = article.querySelector(".bubble");
+  const heading = document.createElement("h3");
+  heading.textContent = "Saved artifacts";
+  const body = document.createElement("p");
+  body.textContent = latestChats.length
+    ? "Open a saved generation to restore its preview, code, and conversation."
+    : "No saved artifacts yet. Generate an animation in Create mode to save one here.";
+  bubble.append(heading, body);
+
+  const grid = document.createElement("div");
+  grid.className = "action-grid";
+
+  latestChats.forEach((chat) => {
+    const card = document.createElement("section");
+    card.className = "action-card";
+    const title = document.createElement("h3");
+    title.textContent = chat.title;
+    const preview = document.createElement("p");
+    preview.textContent = chat.preview;
+    const actions = document.createElement("div");
+    actions.className = "action-row";
+    addActionButton(actions, "Open", () => loadChat(chat.id));
+    card.append(title, preview, actions);
+    grid.append(card);
+  });
+
+  bubble.append(grid);
+  messageList.append(article);
+}
+
+async function copyText(text) {
+  if (!text) {
+    appendMessage("agent", "There is no snippet content to copy yet.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    appendMessage("agent", "Snippet copied.");
+  } catch (error) {
+    appendMessage("agent", "Copy was blocked by the browser. Open the Code view and select the snippet manually.");
+  }
 }
 
 async function loadChat(chatId) {
@@ -332,8 +748,12 @@ navItems.forEach((item) => {
       return;
     }
 
-    setActiveNav(item);
-    appendMessage("agent", `${item.textContent.trim()} will be connected next. For now, Create is ready for new animation prompts.`);
+    if (item.dataset.nav === "snippets") {
+      renderSnippetsView(item);
+      return;
+    }
+
+    renderArtifactsView(item);
   });
 });
 

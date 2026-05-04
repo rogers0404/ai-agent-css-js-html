@@ -10,7 +10,7 @@
     <main class="app-shell">
       <aside class="sidebar" aria-label="Agent navigation">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-mark" aria-hidden="true">AC</span>
           <div>
             <strong>AnimationJS-CSS</strong>
             <span>HTML CSS JS agent</span>
@@ -56,12 +56,21 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">AI Agent Interface</p>
-            <h1>Build polished UI animations with HTML, CSS, and JavaScript.</h1>
+            <p class="eyebrow">AnimationJS-CSS</p>
+            <h1>Design motion-ready interfaces.</h1>
           </div>
-          <div class="agent-status" aria-live="polite">
-            <span class="status-pulse" aria-hidden="true"></span>
-            Ready
+          <div class="status-stack" aria-live="polite">
+            <div class="agent-status">
+              <span class="status-pulse" aria-hidden="true"></span>
+              <span id="agentStatusText">Ready</span>
+            </div>
+            <div class="server-health" id="serverHealth">
+              <span class="health-dot" aria-hidden="true"></span>
+              <span class="health-copy">
+                <strong>Server</strong>
+                <span id="serverHealthText">Checking...</span>
+              </span>
+            </div>
           </div>
         </header>
 
@@ -103,7 +112,7 @@
               </div>
             </div>
 
-            <div class="preview-frame" id="previewFrame"></div>
+            <iframe class="preview-frame" id="previewFrame" title="Generated artifact preview" sandbox="allow-scripts"></iframe>
 
             <pre class="code-frame hidden" id="codeFrame"><code></code></pre>
           </div>
@@ -111,13 +120,24 @@
       </section>
     </main>
 
-    <aside class="server-health" id="serverHealth" aria-live="polite">
-      <span class="health-dot" aria-hidden="true"></span>
-      <span class="health-copy">
-        <strong>Server</strong>
-        <span id="serverHealthText">Checking...</span>
-      </span>
-    </aside>
+    <div class="modal-layer hidden" id="chatActionModal" role="dialog" aria-modal="true" aria-labelledby="chatActionTitle">
+      <div class="modal-panel">
+        <div class="modal-header">
+          <span class="card-label" id="chatActionKicker">Chat action</span>
+          <h2 id="chatActionTitle">Manage chat</h2>
+        </div>
+        <p id="chatActionMessage"></p>
+        <label class="modal-field hidden" id="chatActionField">
+          <span>Chat name</span>
+          <input id="chatActionInput" type="text" maxlength="64" autocomplete="off">
+        </label>
+        <p class="modal-error hidden" id="chatActionError"></p>
+        <div class="modal-actions">
+          <button class="modal-button secondary" id="chatActionCancel" type="button">Cancel</button>
+          <button class="modal-button primary" id="chatActionConfirm" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
 
     <template id="userMessageTemplate">
       <article class="message user-message">

@@ -7,6 +7,9 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = path.join(__dirname, "data");
 const CHAT_STORE_PATH = path.join(DATA_DIR, "chats.json");
 const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const MAX_BODY_BYTES = 100_000;
+const MAX_PROMPT_LENGTH = 2_000;
+const MAX_ARTIFACT_FIELD_LENGTH = 60_000;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -58,8 +61,50 @@ loadEnvFile();
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
   res.end(JSON.stringify(payload));
+}
+
+function applySecurityHeaders(res) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || "").trim();
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 1).trim()}...`;
+}
+
+function isValidChatId(chatId) {
+  return typeof chatId === "string" && /^[a-z0-9-]{1,80}$/i.test(chatId);
+}
+
+function validateArtifactSafety(artifact) {
+  const blockedJs = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|importScripts)\b|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage/i;
+  const blockedHtml = /<script\b|<iframe\b|\son[a-z]+\s*=/i;
+  const blockedCss = /@import\b|url\(\s*["']?\s*https?:/i;
+
+  if (blockedHtml.test(artifact.html)) {
+    throw new Error("Generated HTML included disallowed script, frame, or inline event content.");
+  }
+
+  if (blockedCss.test(artifact.css)) {
+    throw new Error("Generated CSS included a disallowed external import or remote asset.");
+  }
+
+  if (blockedJs.test(artifact.js)) {
+    throw new Error("Generated JavaScript included disallowed storage, cookie, or network access.");
+  }
 }
 
 function ensureChatStore() {
@@ -96,6 +141,8 @@ function createChat() {
   return {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     title: "New chat",
+    pinned: false,
+    pinnedAt: null,
     messages: [],
     artifact: null,
     createdAt: now,
@@ -108,22 +155,41 @@ function summarizeChat(chat) {
 
   return {
     id: chat.id,
-    title: chat.title,
+    title: truncateText(chat.title, 64),
+    pinned: Boolean(chat.pinned),
     updatedAt: chat.updatedAt,
-    preview: lastMessage ? lastMessage.text : "No messages yet"
+    preview: lastMessage ? truncateText(lastMessage.text, 120) : "No messages yet"
   };
 }
 
 function getChatSummaries() {
   return readChatStore().chats
     .slice()
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+        return Boolean(b.pinned) - Boolean(a.pinned);
+      }
+
+      if (Boolean(a.pinned) && Boolean(b.pinned)) {
+        return new Date(a.pinnedAt || a.updatedAt) - new Date(b.pinnedAt || b.updatedAt);
+      }
+
+      return new Date(b.updatedAt) - new Date(a.updatedAt);
+    })
     .map(summarizeChat);
+}
+
+function findChatById(store, chatId) {
+  if (!isValidChatId(chatId)) {
+    return null;
+  }
+
+  return store.chats.find((item) => item.id === chatId) || null;
 }
 
 function findOrCreateChat(chatId) {
   const store = readChatStore();
-  let chat = store.chats.find((item) => item.id === chatId);
+  let chat = isValidChatId(chatId) ? store.chats.find((item) => item.id === chatId) : null;
 
   if (!chat) {
     chat = createChat();
@@ -144,7 +210,7 @@ function saveGeneratedChat(chatId, prompt, artifact) {
   chat.updatedAt = now;
 
   if (chat.title === "New chat") {
-    chat.title = artifact.title || prompt.slice(0, 48);
+    chat.title = truncateText(artifact.title || prompt, 48);
   }
 
   writeChatStore(store);
@@ -161,7 +227,7 @@ function saveFailedChat(chatId, prompt, errorMessage) {
   chat.updatedAt = now;
 
   if (chat.title === "New chat") {
-    chat.title = prompt.slice(0, 48) || "Generation error";
+    chat.title = truncateText(prompt, 48) || "Generation error";
   }
 
   writeChatStore(store);
@@ -174,7 +240,7 @@ function readBody(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (Buffer.byteLength(body) > MAX_BODY_BYTES) {
         reject(new Error("Request body is too large."));
         req.destroy();
       }
@@ -307,7 +373,7 @@ function buildAgentReply(prompt) {
 
   return {
     title: concept,
-    summary: `I designed a ${concept} with ${motion}. The code is split into HTML, CSS, and JavaScript so you can move it into any front-end project.`,
+    summary: `Created a ${concept} with ${motion}.`,
     html,
     css,
     js
@@ -325,7 +391,7 @@ ${prompt}
 Return only valid JSON with this exact shape:
 {
   "title": "short concept name",
-  "summary": "brief explanation written to the user",
+  "summary": "one concise professional sentence, max 180 characters",
   "html": "HTML markup only for the generated artifact",
   "css": "CSS only, scoped to the artifact classes",
   "js": "JavaScript only, scoped to the artifact markup"
@@ -338,7 +404,8 @@ Requirements:
 - Do not include markdown fences, comments outside code strings, or explanatory text outside the JSON.
 - Use accessible semantic HTML where practical.
 - Prefer CSS transitions, keyframes, custom properties, and lightweight JavaScript interactions.
-- The JavaScript must not use external libraries or network requests.`;
+- The JavaScript must not use external libraries or network requests.
+- Keep the summary polished, direct, and free of extra implementation notes.`;
 }
 
 function extractJson(text) {
@@ -360,16 +427,18 @@ function extractJson(text) {
 
 function normalizeArtifact(payload) {
   const artifact = {
-    title: String(payload.title || "Generated UI animation").trim(),
-    summary: String(payload.summary || "I generated a UI animation artifact from your prompt.").trim(),
-    html: String(payload.html || "").trim(),
-    css: String(payload.css || "").trim(),
-    js: String(payload.js || "").trim()
+    title: truncateText(payload.title || "Generated UI animation", 80),
+    summary: truncateText(payload.summary || "Generated a polished UI animation artifact.", 180),
+    html: truncateText(payload.html || "", MAX_ARTIFACT_FIELD_LENGTH),
+    css: truncateText(payload.css || "", MAX_ARTIFACT_FIELD_LENGTH),
+    js: truncateText(payload.js || "", MAX_ARTIFACT_FIELD_LENGTH)
   };
 
   if (!artifact.html || !artifact.css) {
     throw new Error("Gemini returned an incomplete UI artifact.");
   }
+
+  validateArtifactSafety(artifact);
 
   return artifact;
 }
@@ -386,7 +455,7 @@ async function generateWithGemini(prompt) {
     return {
       ...buildAgentReply(prompt),
       provider: "local",
-      summary: "GEMINI_API_KEY is not configured yet, so I used the local fallback generator. Add your key in .env to start using Gemini prompts."
+      summary: "Generated a polished local preview while Gemini is not configured."
     };
   }
 
@@ -443,6 +512,11 @@ async function handleApi(req, res) {
       return;
     }
 
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      sendJson(res, 413, { error: `Prompt must be ${MAX_PROMPT_LENGTH} characters or fewer.` });
+      return;
+    }
+
     const artifact = await generateWithGemini(prompt);
     const chat = saveGeneratedChat(body.chatId, prompt, artifact);
 
@@ -482,7 +556,14 @@ function handleChats(req, res) {
 
   if (req.method === "GET" && match) {
     const store = readChatStore();
-    const chat = store.chats.find((item) => item.id === match[1]);
+    const chatId = decodeURIComponent(match[1]);
+
+    if (!isValidChatId(chatId)) {
+      sendJson(res, 400, { error: "Invalid chat id." });
+      return true;
+    }
+
+    const chat = store.chats.find((item) => item.id === chatId);
 
     if (!chat) {
       sendJson(res, 404, { error: "Chat not found." });
@@ -493,7 +574,84 @@ function handleChats(req, res) {
     return true;
   }
 
+  if (req.method === "PATCH" && match) {
+    handleChatUpdate(req, res, decodeURIComponent(match[1]));
+    return true;
+  }
+
+  if (req.method === "DELETE" && match) {
+    const store = readChatStore();
+    const chatId = decodeURIComponent(match[1]);
+
+    if (!isValidChatId(chatId)) {
+      sendJson(res, 400, { error: "Invalid chat id." });
+      return true;
+    }
+
+    const chatIndex = store.chats.findIndex((item) => item.id === chatId);
+
+    if (chatIndex === -1) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return true;
+    }
+
+    store.chats.splice(chatIndex, 1);
+    writeChatStore(store);
+    sendJson(res, 200, { deleted: true, chatId });
+    return true;
+  }
+
   return false;
+}
+
+async function handleChatUpdate(req, res, chatId) {
+  try {
+    if (!isValidChatId(chatId)) {
+      sendJson(res, 400, { error: "Invalid chat id." });
+      return;
+    }
+
+    const raw = await readBody(req);
+    const body = raw ? JSON.parse(raw) : {};
+    const store = readChatStore();
+    const chat = findChatById(store, chatId);
+
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "title")) {
+      const title = truncateText(body.title, 64);
+
+      if (!title) {
+        sendJson(res, 400, { error: "Chat title is required." });
+        return;
+      }
+
+      chat.title = title;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "pinned")) {
+      const nextPinned = Boolean(body.pinned);
+
+      if (nextPinned && !chat.pinned) {
+        chat.pinnedAt = new Date().toISOString();
+      }
+
+      if (!nextPinned) {
+        chat.pinnedAt = null;
+      }
+
+      chat.pinned = nextPinned;
+    }
+
+    chat.updatedAt = new Date().toISOString();
+    writeChatStore(store);
+    sendJson(res, 200, { chat: summarizeChat(chat) });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "Could not update chat." });
+  }
 }
 
 function handleHealth(req, res) {
@@ -513,10 +671,20 @@ function handleHealth(req, res) {
 }
 
 function serveStatic(req, res) {
-  const safeUrl = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
-  const filePath = path.normalize(path.join(PUBLIC_DIR, safeUrl));
+  let safeUrl = "/index.html";
 
-  if (!filePath.startsWith(PUBLIC_DIR)) {
+  try {
+    safeUrl = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
+  } catch (error) {
+    res.writeHead(400);
+    res.end("Bad request");
+    return;
+  }
+
+  const filePath = path.normalize(path.join(PUBLIC_DIR, safeUrl));
+  const relativePath = path.relative(PUBLIC_DIR, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
@@ -536,6 +704,8 @@ function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  applySecurityHeaders(res);
+
   if (handleHealth(req, res)) {
     return;
   }
