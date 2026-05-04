@@ -1,6 +1,21 @@
 # AnimationJS-CSS
 
+![AnimationJS-CSS agent interface](assets/ai_agent.png)
+
 A Node.js AI agent interface for generating HTML, CSS, and JavaScript UI animations.
+
+AnimationJS-CSS is a focused prototyping agent for turning natural-language prompts into working frontend animation artifacts. The existing app centers on an AI chat workflow: describe a card, loader, button, menu, dashboard widget, or interaction pattern, and the agent returns a structured artifact with HTML, CSS, and JavaScript that can be previewed live or inspected as code.
+
+The interface includes saved chat history, prompt examples, theme controls, a live artifact preview, a code view, and a server health indicator. When Gemini is configured, prompts are sent to the Gemini API through the local Node.js backend. When no API key is available, the app falls back to a local generator so the interface remains usable for demos and development.
+
+## Stack
+
+- **Backend:** Node.js built-in `http`, `fs`, and `path` modules
+- **AI provider:** Google Gemini API via `GEMINI_API_KEY` and `GEMINI_MODEL`
+- **Frontend:** Vanilla HTML, CSS, and JavaScript
+- **Styling:** Custom CSS with responsive layout, themes, animations, and live artifact styling
+- **Storage:** Local JSON chat persistence in `data/chats.json`
+- **Runtime:** `npm start` runs `server.js`
 
 ## Run
 
